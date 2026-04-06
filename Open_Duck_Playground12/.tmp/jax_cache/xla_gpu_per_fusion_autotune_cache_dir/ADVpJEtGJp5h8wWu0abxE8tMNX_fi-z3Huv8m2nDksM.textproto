@@ -1,0 +1,7 @@
+other {
+  name: "CUBLAS"
+  config {
+    type_url: "type.googleapis.com/xla.AutotuneResult.GemmKey"
+    value: "\010\377\377\377\377\377\377\377\377\377\001"
+  }
+}

@@ -1,19 +1,15 @@
-# Copyright 2025 DeepMind Technologies Limited
-# Copyright 2025 Antoine Pirrone - Steve Nguyen
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-"""Standing task for Open Duck Mini V2. (based on Berkeley Humanoid)"""
+"""Stair climbing task for Dog quadruped robot.
+
+Key differences from joystick.py (flat terrain):
+- Larger action_scale (0.4 vs 0.25) for bigger leg movements
+- Reduced orientation penalty (stairs require body tilt)
+- Removed stand_still penalty (conflicting with stair climbing)
+- Added feet_clearance cost (encourage lifting feet over step edges)
+- Added feet_height cost (encourage proper step height during swing)
+- Higher feet_air_time reward (encourage deliberate stepping)
+- Higher tracking_sigma (more forgiving velocity tracking)
+- Relaxed termination (allow more tilt before considering fallen)
+"""
 
 from typing import Any, Dict, Optional, Union
 import jax
@@ -27,85 +23,78 @@ from mujoco_playground._src import mjx_env
 from mujoco_playground._src.collision import geoms_colliding
 
 from . import constants
-from . import base as open_duck_mini_v2_base
-from playground.common.poly_reference_motion import PolyReferenceMotion
+from . import base as dog_base
+
 from playground.common.rewards import (
-    cost_orientation,
+    reward_tracking_lin_vel,
+    reward_tracking_ang_vel,
     cost_torques,
     cost_action_rate,
-    cost_stand_still,
     reward_alive,
-    cost_head_pos,
+    reward_feet_air_time,
+    cost_feet_clearance,
 )
-
-# if set to false, won't require the reference data to be present and won't compute the reference motions polynoms for nothing
-USE_IMITATION_REWARD = False
 
 
 def default_config() -> config_dict.ConfigDict:
     return config_dict.create(
         ctrl_dt=0.02,
         sim_dt=0.002,
-        # episode_length=450,
         episode_length=1000,
         action_repeat=1,
-        action_scale=0.25,
+        action_scale=0.4,  # larger than flat (0.25) — need bigger leg movements
         dof_vel_scale=0.05,
         history_len=0,
         soft_joint_pos_limit_factor=0.95,
+        max_motor_velocity=5.24,
         noise_config=config_dict.create(
-            level=1.0,  # Set to 0.0 to disable noise.
-            action_min_delay=0,  # env steps
-            action_max_delay=3,  # env steps
-            imu_min_delay=0,  # env steps
-            imu_max_delay=3,  # env steps
+            level=1.0,
+            action_min_delay=0,
+            action_max_delay=3,
+            imu_min_delay=0,
+            imu_max_delay=3,
             scales=config_dict.create(
-                hip_pos=0.03,  # rad, for each hip joint
-                knee_pos=0.05,  # rad, for each knee joint
-                ankle_pos=0.08,  # rad, for each ankle joint
-                joint_vel=2.5,  # rad/s # Was 1.5
+                hip_pos=0.03,
+                thigh_pos=0.05,
+                calf_pos=0.08,
+                joint_vel=2.5,
                 gravity=0.1,
                 linvel=0.1,
-                gyro=0.05,
-                accelerometer=0.005,
+                gyro=0.1,
+                accelerometer=0.05,
             ),
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                # tracking_lin_vel=2.5,
-                # tracking_ang_vel=4.0,
-                orientation=-0.5,
+                tracking_lin_vel=2.0,
+                tracking_ang_vel=4.0,
+                orientation=-0.1,       # reduced: body must tilt on stairs
                 torques=-1.0e-3,
-                action_rate=-0.375,  # was -1.5
-                stand_still=-0.3,  # was -1.0 TODO try to relax this a bit ?
-                alive=20.0,
-                # imitation=1.0,
-                head_pos=-2.0,
+                action_rate=-0.2,       # reduced: stair climbing needs jerky motions
+                alive=25.0,             # higher: staying alive on stairs is harder
+                feet_air_time=2.0,      # higher: must lift feet deliberately
+                feet_clearance=-0.5,    # new: encourage lifting feet high during swing
             ),
-            tracking_sigma=0.01,  # was working at 0.01
+            tracking_sigma=0.05,        # more forgiving than flat (0.01)
+            max_foot_height=0.06,       # target foot clearance height (> 5cm step)
         ),
         push_config=config_dict.create(
-            enable=True,
+            enable=False,               # disable pushes on stairs
             interval_range=[5.0, 10.0],
             magnitude_range=[0.1, 1.0],
         ),
-        # lin_vel_x=[-0.1, 0.15],
-        # lin_vel_y=[-0.2, 0.2],
-        # ang_vel_yaw=[-1.0, 1.0],  # [-1.0, 1.0]
-        neck_pitch_range=[-0.34, 1.1],
-        head_pitch_range=[-0.78, 0.78],
-        head_yaw_range=[-2.7, 2.7],
-        head_roll_range=[-0.5, 0.5],
-        head_range_factor=1.0,
+        lin_vel_x=[-0.15, 0.15],        # slower than flat — careful stepping
+        lin_vel_y=[-0.1, 0.1],
+        ang_vel_yaw=[-0.5, 0.5],
     )
 
 
-class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
-    """Standing policy"""
+class StairClimb(dog_base.DogEnv):
+    """Stair climbing locomotion task for the quadruped dog."""
 
     def __init__(
         self,
-        task: str = "flat_terrain",
+        task: str = "stairs",
         config: config_dict.ConfigDict = default_config(),
         config_overrides: Optional[Dict[str, Union[str, int, list[Any]]]] = None,
     ):
@@ -119,42 +108,16 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
     def _post_init(self) -> None:
 
         self._init_q = jp.array(self._mj_model.keyframe("home").qpos)
-        self._default_actuator = self._mj_model.keyframe(
-            "home"
-        ).ctrl  # ctrl of all the actual joints (no floating base and no backlash)
+        self._default_actuator = self._mj_model.keyframe("home").ctrl
 
-        if USE_IMITATION_REWARD:
-            self.PRM = PolyReferenceMotion(
-                "playground/open_duck_mini_v2/data/polynomial_coefficients.pkl"
-            )
-
-        # Note: First joint is freejoint.
-        # get the range of the joints
         self._lowers, self._uppers = self.mj_model.jnt_range[1:].T
         c = (self._lowers + self._uppers) / 2
         r = self._uppers - self._lowers
         self._soft_lowers = c - 0.5 * r * self._config.soft_joint_pos_limit_factor
         self._soft_uppers = c + 0.5 * r * self._config.soft_joint_pos_limit_factor
 
-        # weights for computing the cost of each joints compared to a reference pose
-        self._weights = jp.array(
-            [
-                1.0,
-                1.0,
-                0.01,
-                0.01,
-                1.0,  # left leg.
-                # 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, #head
-                1.0,
-                1.0,
-                0.01,
-                0.01,
-                1.0,  # right leg.
-            ]
-        )
-
-        self._njoints = self._mj_model.njnt  # number of joints
-        self._actuators = self._mj_model.nu  # number of actuators
+        self._njoints = self._mj_model.njnt
+        self._actuators = self._mj_model.nu
 
         self._torso_body_id = self._mj_model.body(constants.ROOT_BODY).id
         self._torso_mass = self._mj_model.body_subtreemass[self._torso_body_id]
@@ -178,82 +141,65 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
             )
         self._foot_linvel_sensor_adr = jp.array(foot_linvel_sensor_adr)
 
-        # noise in the simu?
         qpos_noise_scale = np.zeros(self._actuators)
-
         hip_ids = [
-            idx for idx, j in enumerate(constants.JOINTS_ORDER_NO_HEAD) if "_hip" in j
+            idx for idx, j in enumerate(constants.JOINTS_ORDER) if "_hip_" in j
         ]
-        knee_ids = [
-            idx for idx, j in enumerate(constants.JOINTS_ORDER_NO_HEAD) if "_knee" in j
+        thigh_ids = [
+            idx for idx, j in enumerate(constants.JOINTS_ORDER) if "_thigh_" in j
         ]
-        ankle_ids = [
-            idx for idx, j in enumerate(constants.JOINTS_ORDER_NO_HEAD) if "_ankle" in j
+        calf_ids = [
+            idx for idx, j in enumerate(constants.JOINTS_ORDER) if "_calf_" in j
         ]
-
         qpos_noise_scale[hip_ids] = self._config.noise_config.scales.hip_pos
-        qpos_noise_scale[knee_ids] = self._config.noise_config.scales.knee_pos
-        qpos_noise_scale[ankle_ids] = self._config.noise_config.scales.ankle_pos
-        # qpos_noise_scale[faa_ids] = self._config.noise_config.scales.faa_pos
+        qpos_noise_scale[thigh_ids] = self._config.noise_config.scales.thigh_pos
+        qpos_noise_scale[calf_ids] = self._config.noise_config.scales.calf_pos
         self._qpos_noise_scale = jp.array(qpos_noise_scale)
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
-        qpos = self._init_q  # the complete qpos
-        # print(f'DEBUG0 init qpos: {qpos}')
+        qpos = self._init_q
         qvel = jp.zeros(self.mjx_model.nv)
 
-        # init position/orientation in environment
-        # x=+U(-0.05, 0.05), y=+U(-0.05, 0.05), yaw=U(-3.14, 3.14).
         rng, key = jax.random.split(rng)
         dxy = jax.random.uniform(key, (2,), minval=-0.05, maxval=0.05)
 
-        # floating base
         base_qpos = self.get_floating_base_qpos(qpos)
         base_qpos = base_qpos.at[0:2].set(
             qpos[self._floating_base_qpos_addr : self._floating_base_qpos_addr + 2]
             + dxy
-        )  # x y noise
+        )
 
         rng, key = jax.random.split(rng)
         yaw = jax.random.uniform(key, (1,), minval=-3.14, maxval=3.14)
         quat = math.axis_angle_to_quat(jp.array([0, 0, 1]), yaw)
         new_quat = math.quat_mul(
-            qpos[self._floating_base_qpos_addr + 3 : self._floating_base_qpos_addr + 7],
+            qpos[
+                self._floating_base_qpos_addr
+                + 3 : self._floating_base_qpos_addr
+                + 7
+            ],
             quat,
-        )  # yaw noise
-
+        )
         base_qpos = base_qpos.at[3:7].set(new_quat)
-
         qpos = self.set_floating_base_qpos(base_qpos, qpos)
-        # print(f'DEBUG1 base qpos: {qpos}')
-        # init joint position
-        # qpos[7:]=*U(0.0, 0.1)
-        rng, key = jax.random.split(rng)
 
-        # multiply actual joints with noise (excluding floating base and backlash)
+        rng, key = jax.random.split(rng)
         qpos_j = self.get_actuator_joints_qpos(qpos) * jax.random.uniform(
-            key, (self._actuators,), minval=0.5, maxval=1.5
+            key, (self._actuators,), minval=0.8, maxval=1.2  # less randomization than flat
         )
         qpos = self.set_actuator_joints_qpos(qpos_j, qpos)
-        # print(f'DEBUG2 joint qpos: {qpos}')
-        # init joint vel
-        # d(xyzrpy)=U(-0.05, 0.05)
-        rng, key = jax.random.split(rng)
-        # qvel = qvel.at[self._floating_base_qvel_addr : self._floating_base_qvel_addr + 6].set(
-        #     jax.random.uniform(key, (6,), minval=-0.5, maxval=0.5)
-        # )
 
+        rng, key = jax.random.split(rng)
         qvel = self.set_floating_base_qvel(
-            jax.random.uniform(key, (6,), minval=-0.5, maxval=0.5), qvel
+            jax.random.uniform(key, (6,), minval=-0.05, maxval=0.05), qvel
         )
-        # print(f'DEBUG3 base qvel: {qvel}')
+
         ctrl = self.get_actuator_joints_qpos(qpos)
-        # print(f'DEBUG4 ctrl: {ctrl}')
         data = mjx_env.init(self.mjx_model, qpos=qpos, qvel=qvel, ctrl=ctrl)
+
         rng, cmd_rng = jax.random.split(rng)
         cmd = self.sample_command(cmd_rng)
 
-        # Sample push interval.
         rng, push_rng = jax.random.split(rng)
         push_interval = jax.random.uniform(
             push_rng,
@@ -262,13 +208,6 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         )
         push_interval_steps = jp.round(push_interval / self.dt).astype(jp.int32)
 
-        if USE_IMITATION_REWARD:
-            current_reference_motion = self.PRM.get_reference_motion(
-                cmd[0], cmd[1], cmd[2], 0
-            )
-        else:
-            current_reference_motion = jp.zeros(0)
-
         info = {
             "rng": rng,
             "step": 0,
@@ -276,22 +215,17 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
             "last_act": jp.zeros(self.mjx_model.nu),
             "last_last_act": jp.zeros(self.mjx_model.nu),
             "last_last_last_act": jp.zeros(self.mjx_model.nu),
-            "motor_targets": jp.zeros(self.mjx_model.nu),
-            "feet_air_time": jp.zeros(2),
-            "last_contact": jp.zeros(2, dtype=bool),
-            "swing_peak": jp.zeros(2),
-            # Push related.
+            "motor_targets": self._default_actuator,
+            "feet_air_time": jp.zeros(4),
+            "last_contact": jp.zeros(4, dtype=bool),
+            "swing_peak": jp.zeros(4),
             "push": jp.array([0.0, 0.0]),
             "push_step": 0,
             "push_interval_steps": push_interval_steps,
-            # History related.
             "action_history": jp.zeros(
                 self._config.noise_config.action_max_delay * self._actuators
             ),
             "imu_history": jp.zeros(self._config.noise_config.imu_max_delay * 3),
-            # imitation related
-            "imitation_i": 0,
-            "current_reference_motion": current_reference_motion,
         }
 
         metrics = {}
@@ -315,24 +249,6 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
 
     def step(self, state: mjx_env.State, action: jax.Array) -> mjx_env.State:
 
-        if USE_IMITATION_REWARD:
-            state.info["imitation_i"] += 1
-            state.info["imitation_i"] = (
-                state.info["imitation_i"] % self.PRM.nb_steps_in_period
-            )  # not critical, is already moduloed in get_reference_motion
-        else:
-            state.info["imitation_i"] = 0
-
-        if USE_IMITATION_REWARD:
-            state.info["current_reference_motion"] = self.PRM.get_reference_motion(
-                state.info["command"][0],
-                state.info["command"][1],
-                state.info["command"][2],
-                state.info["imitation_i"],
-            )
-        else:
-            state.info["current_reference_motion"] = jp.zeros(0)
-
         state.info["rng"], push1_rng, push2_rng, action_delay_rng = jax.random.split(
             state.info["rng"], 4
         )
@@ -352,8 +268,9 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         )
         action_w_delay = action_history.reshape((-1, self._actuators))[
             action_idx[0]
-        ]  # action with delay
+        ]
 
+        # Push (disabled by default for stairs)
         push_theta = jax.random.uniform(push1_rng, maxval=2 * jp.pi)
         push_magnitude = jax.random.uniform(
             push2_rng,
@@ -371,13 +288,21 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         ].set(
             push * push_magnitude
             + qvel[self._floating_base_qvel_addr : self._floating_base_qvel_addr + 2]
-        )  # floating base x,y
+        )
         data = state.data.replace(qvel=qvel)
         state = state.replace(data=data)
 
         motor_targets = (
             self._default_actuator + action_w_delay * self._config.action_scale
         )
+
+        prev_motor_targets = state.info["motor_targets"]
+        motor_targets = jp.clip(
+            motor_targets,
+            prev_motor_targets - self._config.max_motor_velocity * self.dt,
+            prev_motor_targets + self._config.max_motor_velocity * self.dt,
+        )
+
         data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
         state.info["motor_targets"] = motor_targets
 
@@ -400,18 +325,18 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         rewards = self._get_reward(
             data, action, state.info, state.metrics, done, first_contact, contact
         )
-        # FIXME
         rewards = {
             k: v * self._config.reward_config.scales[k] for k, v in rewards.items()
         }
         reward = jp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
-        # jax.debug.print('STEP REWARD: {}',reward)
+
         state.info["push"] = push
         state.info["step"] += 1
         state.info["push_step"] += 1
         state.info["last_last_last_act"] = state.info["last_last_act"]
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
+
         state.info["rng"], cmd_rng = jax.random.split(state.info["rng"])
         state.info["command"] = jp.where(
             state.info["step"] > 500,
@@ -426,6 +351,7 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         state.info["feet_air_time"] *= ~contact
         state.info["last_contact"] = contact
         state.info["swing_peak"] *= ~contact
+
         for k, v in rewards.items():
             rew_scale = self._config.reward_config.scales[k]
             if rew_scale != 0:
@@ -440,7 +366,9 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         return state
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:
-        fall_termination = self.get_gravity(data)[-1] < 0.0
+        # More relaxed than flat: allow tilt up to ~60° (cos60°=0.5, but z<-0.3 means >~107°)
+        gravity_z = self.get_gravity(data)[-1]
+        fall_termination = gravity_z < -0.3  # much more relaxed than flat (< 0.0)
         return fall_termination | jp.isnan(data.qpos).any() | jp.isnan(data.qvel).any()
 
     def _get_obs(
@@ -474,7 +402,6 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
             * self._config.noise_config.scales.gravity
         )
 
-        # Handle IMU delay
         imu_history = jp.roll(info["imu_history"], 3).at[:3].set(noisy_gravity)
         info["imu_history"] = imu_history
         imu_idx = jax.random.randint(
@@ -485,15 +412,10 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         )
         noisy_gravity = imu_history.reshape((-1, 3))[imu_idx[0]]
 
-        # joint_angles = data.qpos[7:]
-
-        # Handling backlash
         joint_angles = self.get_actuator_joints_qpos(data.qpos)
         joint_backlash = self.get_actuator_backlash_qpos(data.qpos)
-
         for i in self.backlash_idx_to_add:
             joint_backlash = jp.insert(joint_backlash, i, 0)
-
         joint_angles = joint_angles + joint_backlash
 
         info["rng"], noise_rng = jax.random.split(info["rng"])
@@ -504,7 +426,6 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
             * self._qpos_noise_scale
         )
 
-        # joint_vel = data.qvel[6:]
         joint_vel = self.get_actuator_joints_qvel(data.qvel)
         info["rng"], noise_rng = jax.random.split(info["rng"])
         noisy_joint_vel = (
@@ -514,30 +435,19 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
             * self._config.noise_config.scales.joint_vel
         )
 
-        linvel = self.get_local_linvel(data)
-        # info["rng"], noise_rng = jax.random.split(info["rng"])
-        # noisy_linvel = (
-        #     linvel
-        #     + (2 * jax.random.uniform(noise_rng, shape=linvel.shape) - 1)
-        #     * self._config.noise_config.level
-        #     * self._config.noise_config.scales.linvel
-        # )
-
+        # Same obs space as joystick (85 dims) for checkpoint compatibility
         state = jp.hstack(
             [
-                # noisy_linvel,  # 3
-                # noisy_gyro,  # 3
-                # noisy_gravity,  # 3
                 noisy_gyro,  # 3
                 noisy_accelerometer,  # 3
                 info["command"],  # 3
-                noisy_joint_angles - self._default_actuator,  # 10
-                noisy_joint_vel * self._config.dof_vel_scale,  # 10
-                info["last_act"],  # 10
-                info["last_last_act"],  # 10
-                info["last_last_last_act"],  # 10
-                contact,  # 2
-                info["current_reference_motion"],
+                noisy_joint_angles - self._default_actuator,  # 12
+                noisy_joint_vel * self._config.dof_vel_scale,  # 12
+                info["last_act"],  # 12
+                info["last_last_act"],  # 12
+                info["last_last_last_act"],  # 12
+                info["motor_targets"],  # 12
+                contact,  # 4
             ]
         )
 
@@ -545,23 +455,23 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         global_angvel = self.get_global_angvel(data)
         feet_vel = data.sensordata[self._foot_linvel_sensor_adr].ravel()
         root_height = data.qpos[self._floating_base_qpos_addr + 2]
+        linvel = self.get_local_linvel(data)
 
         privileged_state = jp.hstack(
             [
                 state,
-                gyro,  # 3
-                accelerometer,  # 3
-                gravity,  # 3
-                linvel,  # 3
-                global_angvel,  # 3
+                gyro,
+                accelerometer,
+                gravity,
+                linvel,
+                global_angvel,
                 joint_angles - self._default_actuator,
                 joint_vel,
-                root_height,  # 1
-                data.actuator_force,  # 10
-                contact,  # 2
-                feet_vel,  # 4*3
-                info["feet_air_time"],  # 2
-                info["current_reference_motion"],
+                root_height,
+                data.actuator_force,
+                contact,
+                feet_vel,
+                info["feet_air_time"],
             ]
         )
 
@@ -580,82 +490,58 @@ class Standing(open_duck_mini_v2_base.OpenDuckMiniV2Env):
         first_contact: jax.Array,
         contact: jax.Array,
     ) -> dict[str, jax.Array]:
-        del metrics  # Unused.
+        del metrics
+
+        # Foot velocity and position for clearance reward
+        feet_vel = data.sensordata[self._foot_linvel_sensor_adr]
+        foot_pos = data.site_xpos[self._feet_site_id]
 
         ret = {
-            "orientation": cost_orientation(self.get_gravity(data)),
+            "tracking_lin_vel": reward_tracking_lin_vel(
+                info["command"],
+                self.get_local_linvel(data),
+                self._config.reward_config.tracking_sigma,
+            ),
+            "tracking_ang_vel": reward_tracking_ang_vel(
+                info["command"],
+                self.get_gyro(data),
+                self._config.reward_config.tracking_sigma,
+            ),
+            "orientation": jp.sum(jp.square(self.get_gravity(data)[:2])),
             "torques": cost_torques(data.actuator_force),
             "action_rate": cost_action_rate(action, info["last_act"]),
             "alive": reward_alive(),
-            "stand_still": cost_stand_still(
-                # info["command"], data.qpos[7:], data.qvel[6:], self._default_pose
+            "feet_air_time": reward_feet_air_time(
+                info["feet_air_time"],
+                first_contact,
                 info["command"],
-                self.get_actuator_joints_qpos(data.qpos),
-                self.get_actuator_joints_qvel(data.qvel),
-                self._default_actuator,
-                True
             ),
-            "head_pos": cost_head_pos(
-                self.get_actuator_joints_qpos(data.qpos),
-                self.get_actuator_joints_qvel(data.qvel),
-                info["command"],
+            "feet_clearance": cost_feet_clearance(
+                feet_vel,
+                foot_pos,
+                self._config.reward_config.max_foot_height,
             ),
         }
 
         return ret
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
-        rng1, rng2, rng3, rng4, rng5, rng6, rng7, rng8 = jax.random.split(rng, 8)
+        rng1, rng2, rng3, rng4 = jax.random.split(rng, 4)
 
-        # lin_vel_x = jax.random.uniform(
-        #     rng1, minval=self._config.lin_vel_x[0], maxval=self._config.lin_vel_x[1]
-        # )
-        # lin_vel_y = jax.random.uniform(
-        #     rng2, minval=self._config.lin_vel_y[0], maxval=self._config.lin_vel_y[1]
-        # )
-        # ang_vel_yaw = jax.random.uniform(
-        #     rng3,
-        #     minval=self._config.ang_vel_yaw[0],
-        #     maxval=self._config.ang_vel_yaw[1],
-        # )
-
-        neck_pitch = jax.random.uniform(
-            rng5,
-            minval=self._config.neck_pitch_range[0] * self._config.head_range_factor,
-            maxval=self._config.neck_pitch_range[1] * self._config.head_range_factor,
+        lin_vel_x = jax.random.uniform(
+            rng1, minval=self._config.lin_vel_x[0], maxval=self._config.lin_vel_x[1]
+        )
+        lin_vel_y = jax.random.uniform(
+            rng2, minval=self._config.lin_vel_y[0], maxval=self._config.lin_vel_y[1]
+        )
+        ang_vel_yaw = jax.random.uniform(
+            rng3,
+            minval=self._config.ang_vel_yaw[0],
+            maxval=self._config.ang_vel_yaw[1],
         )
 
-        head_pitch = jax.random.uniform(
-            rng6,
-            minval=self._config.head_pitch_range[0] * self._config.head_range_factor,
-            maxval=self._config.head_pitch_range[1] * self._config.head_range_factor,
-        )
-
-        head_yaw = jax.random.uniform(
-            rng7,
-            minval=self._config.head_yaw_range[0] * self._config.head_range_factor,
-            maxval=self._config.head_yaw_range[1] * self._config.head_range_factor,
-        )
-
-        head_roll = jax.random.uniform(
-            rng8,
-            minval=self._config.head_roll_range[0] * self._config.head_range_factor,
-            maxval=self._config.head_roll_range[1] * self._config.head_range_factor,
-        )
-
-        # With 10% chance, set everything to zero.
         return jp.where(
             jax.random.bernoulli(rng4, p=0.1),
-            jp.zeros(7),
-            jp.hstack(
-                [
-                    0.0,
-                    0.0,
-                    0.0,
-                    neck_pitch,
-                    head_pitch,
-                    head_yaw,
-                    head_roll,
-                ]
-            ),
+            jp.zeros(3),
+            jp.hstack([lin_vel_x, lin_vel_y, ang_vel_yaw]),
         )

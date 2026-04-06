@@ -5,11 +5,17 @@ from etils import epath
 
 ROOT_PATH = epath.Path(__file__).parent
 FLAT_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_flat_terrain.xml"
+ROUGH_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_rough_terrain.xml"
+STAIRS_XML = ROOT_PATH / "xmls" / "scene_stairs.xml"
+STAIRS_MIXED_XML = ROOT_PATH / "xmls" / "scene_stairs_mixed.xml"
 
 
 def task_to_xml(task_name: str) -> epath.Path:
     return {
         "flat_terrain": FLAT_TERRAIN_XML,
+        "rough_terrain": ROUGH_TERRAIN_XML,
+        "stairs": STAIRS_XML,
+        "stairs_mixed": STAIRS_MIXED_XML,
     }[task_name]
 
 

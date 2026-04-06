@@ -80,7 +80,7 @@
             range="-0.802851455917 0.802851455917" class="dog_motor"/>
           <inertial pos="-0.0267598 -0.0023151 -0.0094611" mass="0.0843956"
             fullinertia="0.0000207 0.0000234 0.0000146 -0.0000004 0.0000002 0.0000001"/>
-          <geom type="mesh" class="visual" mesh="FR_hip" material="hip_material"/>
+          <geom type="mesh" class="visual" mesh="FR_hip" material="FR_hip_material"/>
           <geom class="collision" type="box" size="0.02175 0.021 0.02825" pos="-0.026 -0.006 -0.01"/>
 
           <body name="FR_thigh" pos="-0.02585 -0.024 -0.01">
@@ -88,7 +88,7 @@
               range="-1.0471975512 4.18879020479" class="dog_motor"/>
             <inertial pos="0.0017380 -0.0320053 -0.0336023" mass="0.1351927"
               fullinertia="0.0002128 0.0001953 0.0000461 -0.0000023 -0.0000185 0.0000224"/>
-            <geom type="mesh" class="visual" mesh="FR_thigh" material="thigh_material"/>
+            <geom type="mesh" class="visual" mesh="FR_thigh" material="FR_thigh_material"/>
             <geom class="collision" type="box" size="0.01 0.0065 0.05568" pos="0.03 -0.034 -0.033"/>
 
             <body name="FR_calf" pos="0.03 -0.0081 -0.10725">
@@ -96,14 +96,14 @@
                 range="-2.6965336943 -0.916297857297" class="dog_motor"/>
               <inertial pos="0.0004209 -0.0271693 -0.0219402" mass="0.0993956"
                 fullinertia="0.0001117 0.0001086 0.0000130 0.0000001 -0.0000033 -0.0000012"/>
-              <geom type="mesh" class="visual" mesh="FR_calf" material="calf_material"/>
+              <geom type="mesh" class="visual" mesh="FR_calf" material="FR_calf_material"/>
               <geom class="collision" type="box" size="0.0045 0.0045 0.06" pos="0.000 -0.026 -0.046"/>
 
               <!-- FR foot (fixed to calf) -->
               <body name="FR_foot_body" pos="-9.305E-05 -0.0261 -0.1184">
                 <inertial pos="-0.0065101 0.0000000 -0.0064928" mass="0.0060000"
                   fullinertia="0.0000008 0.0000008 0.0000008 0.0000000 -0.0000002 0.0000000"/>
-                <geom type="mesh" class="visual" mesh="FR_foot" material="foot_material"/>
+                <geom type="mesh" class="visual" mesh="FR_foot" material="FR_foot_material"/>
                 <geom class="collision" type="sphere" size="0.02" name="FR_foot_collision"/>
                 <site group="0" name="FR_foot" pos="0 0 0"/>
               </body>
@@ -117,7 +117,7 @@
             range="-0.802851455917 0.802851455917" class="dog_motor"/>
           <inertial pos="-0.0267598 0.0023151 -0.0095722" mass="0.0843956"
             fullinertia="0.0000207 0.0000235 0.0000146 0.0000004 0.0000002 -0.0000001"/>
-          <geom type="mesh" class="visual" mesh="FL_hip" material="hip_material"/>
+          <geom type="mesh" class="visual" mesh="FL_hip" material="FL_hip_material"/>
           <geom class="collision" type="box" size="0.02175 0.021 0.02825" pos="-0.026 0.006 -0.01"/>
 
           <body name="FL_thigh" pos="-0.02585 0.024 -0.010445">
@@ -125,7 +125,7 @@
               range="-1.0471975512 4.18879020479" class="dog_motor"/>
             <inertial pos="0.0017380 0.0320052 -0.0336023" mass="0.1351927"
               fullinertia="0.0002128 0.0001953 0.0000461 0.0000023 -0.0000185 -0.0000224"/>
-            <geom type="mesh" class="visual" mesh="FL_thigh" material="thigh_material"/>
+            <geom type="mesh" class="visual" mesh="FL_thigh" material="FL_thigh_material"/>
             <geom class="collision" type="box" size="0.01 0.0065 0.05568" pos="0.03 0.034 -0.033"/>
 
             <body name="FL_calf" pos="0.03 0.0081 -0.107">
@@ -133,14 +133,14 @@
                 range="-2.6965336943 -0.916297857297" class="dog_motor"/>
               <inertial pos="0.0004209 0.0271693 -0.0220310" mass="0.0993956"
                 fullinertia="0.0001121 0.0001090 0.0000130 -0.0000001 -0.0000033 0.0000011"/>
-              <geom type="mesh" class="visual" mesh="FL_calf" material="calf_material"/>
+              <geom type="mesh" class="visual" mesh="FL_calf" material="FL_calf_material"/>
               <geom class="collision" type="box" size="0.0045 0.0045 0.06" pos="0.000 0.026 -0.046"/>
 
               <!-- FL foot (fixed to calf) -->
               <body name="FL_foot_body" pos="-9.305E-05 0.0261 -0.11865">
                 <inertial pos="-0.0065101 0.0000000 -0.0064928" mass="0.0060000"
                   fullinertia="0.0000008 0.0000008 0.0000008 0.0000000 -0.0000002 0.0000000"/>
-                <geom type="mesh" class="visual" mesh="FL_foot" material="foot_material"/>
+                <geom type="mesh" class="visual" mesh="FL_foot" material="FL_foot_material"/>
                 <geom class="collision" type="sphere" size="0.02" name="FL_foot_collision"/>
                 <site group="0" name="FL_foot" pos="0 0 0"/>
               </body>
@@ -154,7 +154,7 @@
             range="-0.802851455917 0.802851455917" class="dog_motor"/>
           <inertial pos="0.0267597 -0.0023151 -0.0094611" mass="0.0843956"
             fullinertia="0.0000207 0.0000234 0.0000146 0.0000004 0.0000002 0.0000001"/>
-          <geom type="mesh" class="visual" mesh="RR_hip" material="hip_material"/>
+          <geom type="mesh" class="visual" mesh="RR_hip" material="RR_hip_material"/>
           <geom class="collision" type="box" size="0.02175 0.021 0.02825" pos="0.026 -0.006 -0.01"/>
 
           <body name="RR_thigh" pos="0.02585 -0.024 -0.01">
@@ -162,7 +162,7 @@
               range="-1.0471975512 4.18879020479" class="dog_motor"/>
             <inertial pos="0.0017380 -0.0320053 -0.0336023" mass="0.1351927"
               fullinertia="0.0002128 0.0001953 0.0000461 -0.0000023 -0.0000185 0.0000224"/>
-            <geom type="mesh" class="visual" mesh="RR_thigh" material="thigh_material"/>
+            <geom type="mesh" class="visual" mesh="RR_thigh" material="RR_thigh_material"/>
             <geom class="collision" type="box" size="0.01 0.0065 0.05568" pos="0.03 -0.034 -0.033"/>
 
             <body name="RR_calf" pos="0.03 -0.0081 -0.10725">
@@ -170,14 +170,14 @@
                 range="-2.6965336943 -0.916297857297" class="dog_motor"/>
               <inertial pos="0.0004209 -0.0271693 -0.0219402" mass="0.0993956"
                 fullinertia="0.0001117 0.0001086 0.0000130 0.0000001 -0.0000033 -0.0000012"/>
-              <geom type="mesh" class="visual" mesh="RR_calf" material="calf_material"/>
+              <geom type="mesh" class="visual" mesh="RR_calf" material="RR_calf_material"/>
               <geom class="collision" type="box" size="0.0045 0.0045 0.06" pos="0.000 -0.026 -0.046"/>
 
               <!-- RR foot (fixed to calf) -->
               <body name="RR_foot_body" pos="-9.305E-05 -0.0261 -0.1184">
                 <inertial pos="-0.0065101 0.0000000 -0.0064928" mass="0.0060000"
                   fullinertia="0.0000008 0.0000008 0.0000008 0.0000000 -0.0000002 0.0000000"/>
-                <geom type="mesh" class="visual" mesh="RR_foot" material="foot_material"/>
+                <geom type="mesh" class="visual" mesh="RR_foot" material="RR_foot_material"/>
                 <geom class="collision" type="sphere" size="0.02" name="RR_foot_collision"/>
                 <site group="0" name="RR_foot" pos="0 0 0"/>
               </body>
@@ -191,7 +191,7 @@
             range="-0.802851455917 0.802851455917" class="dog_motor"/>
           <inertial pos="0.0267597 0.0023151 -0.0094611" mass="0.0843956"
             fullinertia="0.0000207 0.0000234 0.0000146 -0.0000004 0.0000002 -0.0000001"/>
-          <geom type="mesh" class="visual" mesh="RL_hip" material="hip_material"/>
+          <geom type="mesh" class="visual" mesh="RL_hip" material="RL_hip_material"/>
           <geom class="collision" type="box" size="0.02175 0.021 0.02825" pos="0.026 0.006 -0.01"/>
 
           <body name="RL_thigh" pos="0.02585 0.024 -0.01">
@@ -199,7 +199,7 @@
               range="-1.0471975512 4.18879020479" class="dog_motor"/>
             <inertial pos="0.0017380 0.0320052 -0.0336023" mass="0.1351927"
               fullinertia="0.0002128 0.0001953 0.0000461 0.0000023 -0.0000185 -0.0000224"/>
-            <geom type="mesh" class="visual" mesh="RL_thigh" material="thigh_material"/>
+            <geom type="mesh" class="visual" mesh="RL_thigh" material="RL_thigh_material"/>
             <geom class="collision" type="box" size="0.01 0.0065 0.05568" pos="0.03 0.034 -0.033"/>
 
             <body name="RL_calf" pos="0.03 0.0081 -0.107">
@@ -207,14 +207,14 @@
                 range="-2.6965336943 -0.916297857297" class="dog_motor"/>
               <inertial pos="0.0004209 0.0271690 -0.0220310" mass="0.0993956"
                 fullinertia="0.0001121 0.0001090 0.0000130 -0.0000001 -0.0000033 0.0000011"/>
-              <geom type="mesh" class="visual" mesh="RL_calf" material="calf_material"/>
+              <geom type="mesh" class="visual" mesh="RL_calf" material="RL_calf_material"/>
               <geom class="collision" type="box" size="0.0045 0.0045 0.06" pos="0.000 0.026 -0.046"/>
 
               <!-- RL foot (fixed to calf) -->
               <body name="RL_foot_body" pos="-9.305E-05 0.0261 -0.11865">
                 <inertial pos="-0.0065101 0.0000000 -0.0064928" mass="0.0060000"
                   fullinertia="0.0000008 0.0000008 0.0000008 0.0000000 -0.0000002 0.0000000"/>
-                <geom type="mesh" class="visual" mesh="RL_foot" material="foot_material"/>
+                <geom type="mesh" class="visual" mesh="RL_foot" material="RL_foot_material"/>
                 <geom class="collision" type="sphere" size="0.02" name="RL_foot_collision"/>
                 <site group="0" name="RL_foot" pos="0 0 0"/>
               </body>
@@ -244,11 +244,24 @@
     <mesh file="RL_thigh.STL"/>
     <mesh file="RL_calf.STL"/>
     <mesh file="RL_foot.STL"/>
-    <material name="trunk_material" rgba="0.3 0.3 0.3 1"/>
-    <material name="hip_material" rgba="0.6 0.6 0.6 1"/>
-    <material name="thigh_material" rgba="0.5 0.5 0.5 1"/>
-    <material name="calf_material" rgba="0.4 0.4 0.4 1"/>
-    <material name="foot_material" rgba="0.2 0.2 0.2 1"/>
+    <!-- GO2-style: black body + dark silver legs + rubber feet -->
+    <material name="trunk_material" rgba="0.78 0.78 0.80 1" specular="0.6" shininess="0.7"/>
+    <material name="FR_hip_material" rgba="0.15 0.15 0.15 1" specular="0.4" shininess="0.5"/>
+    <material name="FR_thigh_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="FR_calf_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="FR_foot_material" rgba="0.12 0.12 0.12 1" specular="0.2" shininess="0.1"/>
+    <material name="FL_hip_material" rgba="0.15 0.15 0.15 1" specular="0.4" shininess="0.5"/>
+    <material name="FL_thigh_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="FL_calf_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="FL_foot_material" rgba="0.12 0.12 0.12 1" specular="0.2" shininess="0.1"/>
+    <material name="RR_hip_material" rgba="0.15 0.15 0.15 1" specular="0.4" shininess="0.5"/>
+    <material name="RR_thigh_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="RR_calf_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="RR_foot_material" rgba="0.12 0.12 0.12 1" specular="0.2" shininess="0.1"/>
+    <material name="RL_hip_material" rgba="0.15 0.15 0.15 1" specular="0.4" shininess="0.5"/>
+    <material name="RL_thigh_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="RL_calf_material" rgba="0.55 0.55 0.55 1" specular="0.5" shininess="0.6"/>
+    <material name="RL_foot_material" rgba="0.12 0.12 0.12 1" specular="0.2" shininess="0.1"/>
   </asset>
 
   <actuator>

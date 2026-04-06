@@ -43,6 +43,7 @@ playground/dog/
 ├── base.py                  # DogEnv 基类：加载模型、关节索引映射、传感器读取
 ├── joystick.py              # Joystick 行走任务环境（速度追踪）
 ├── standing.py              # Standing 站立平衡任务环境
+├── stair_climb.py           # StairClimb 台阶攀爬任务环境（专用 reward）
 ├── runner.py                # 训练入口：DogRunner
 ├── mujoco_infer_base.py     # MuJoCo CPU 推理基类（NumPy）
 ├── mujoco_infer.py          # ONNX 策略推理 + MuJoCo Viewer 可视化
@@ -51,8 +52,14 @@ playground/dog/
     ├── dog.xml              # 主机器人 MuJoCo 模型
     ├── joints_properties.xml # 关节电机属性默认值
     ├── sensors.xml          # IMU + 足部传感器定义
-    ├── scene_flat_terrain.xml # 平坦地形场景
-    └── assets/              # 17 个 STL 网格文件
+    ├── scene_flat_terrain.xml  # 平坦地形场景
+    ├── scene_rough_terrain.xml # 粗糙地形场景（随机起伏高度场）
+    ├── scene_stairs.xml        # 台阶地形场景（规则上下台阶）
+    ├── scene_stairs_mixed.xml  # 混合台阶地形场景（缓坡/陡坡/随机/斜坡）
+    └── assets/              # 17 个 STL 网格文件 + 高度场图
+        ├── hfield.png              # 粗糙地形高度场
+        ├── stairs_hfield.png       # 台阶地形高度场
+        ├── stairs_mixed_hfield.png # 混合台阶地形高度场
         ├── trunk.STL
         ├── FR_hip.STL / FL_hip.STL / RR_hip.STL / RL_hip.STL
         ├── FR_thigh.STL / FL_thigh.STL / RR_thigh.STL / RL_thigh.STL
@@ -69,7 +76,7 @@ python -m playground.dog.runner \
     --env joystick \
     --task flat_terrain \
     --output_dir checkpoints/dog_joystick \
-    --num_timesteps 1500000
+    --num_timesteps 50000000
 ```
 
 #### 训练参数说明
@@ -77,11 +84,12 @@ python -m playground.dog.runner \
 
 | 参数                        | 默认值         | 说明                                              |
 | --------------------------- | -------------- | ------------------------------------------------- |
-| `--env`                     | `joystick`     | 环境类型：`joystick`（行走）或 `standing`（站立） |
-| `--task`                    | `flat_terrain` | 地形类型                                          |
+| `--env`                     | `joystick`     | 环境类型：`joystick`（平地行走）/ `standing`（站立）/ `stair_climb`（台阶攀爬） |
+| `--task`                    | `flat_terrain` | 地形类型：`flat_terrain` / `rough_terrain` / `stairs` / `stairs_mixed` |
 | `--output_dir`              | `checkpoints`  | checkpoint 和 ONNX 模型的保存目录                 |
 | `--num_timesteps`           | `150000000`    | 总训练步数（1.5亿步约需数小时，视 GPU 而定）      |
 | `--restore_checkpoint_path` | `None`         | 从已有 checkpoint 恢复训练                        |
+| `--num_envs`                | `8192`         | 并行环境数量（显存不足时减小，如 2048）           |
 
 #### 行走任务奖励设计
 
@@ -121,10 +129,65 @@ python -m playground.dog.runner \
     --env standing \
     --task flat_terrain \
     --output_dir checkpoints/dog_standing \
-    --num_timesteps 1500000
+    --num_timesteps 50000000
 ```
 
-### 3.3 从 Checkpoint 恢复训练
+### 3.3 Rough Terrain 粗糙地形训练
+
+在随机起伏的高度场（台阶/坡面/凹凸）上训练行走，提高机器狗对复杂地形的适应能力。
+
+```bash
+python -m playground.dog.runner \
+    --env joystick \
+    --task rough_terrain \
+    --output_dir checkpoints/dog_rough \
+    --num_timesteps 50000000
+```
+
+> 建议先在 `flat_terrain` 上训练出能走的策略，再用 `rough_terrain` 做第二阶段训练，效果更好。可以用 `--restore_checkpoint_path` 从平坦地形的 checkpoint 继续训练。
+
+### 3.4 Stairs 台阶地形训练
+
+在四面金字塔台阶地形上训练机器狗攀爬台阶。**必须使用 `--env stair_climb`**（不是 joystick），它有专门针对台阶设计的 reward：
+
+| 与 joystick 的区别 | 说明 |
+|---|---|
+| `action_scale` 0.4（原 0.25） | 台阶需要更大的腿部动作幅度 |
+| `orientation` 惩罚 -0.1（原 -0.5） | 台阶上身体必然倾斜，放宽限制 |
+| 去掉 `stand_still` 惩罚 | 台阶上不能要求保持默认姿态 |
+| 新增 `feet_clearance` 惩罚 | 鼓励抬脚高过台阶边缘 |
+| `feet_air_time` 奖励 2.0（原 1.0） | 更鼓励主动抬腿迈步 |
+| `tracking_sigma` 0.05（原 0.01） | 更宽容的速度追踪 |
+| 速度范围缩小 | 台阶上需要慢速谨慎移动 |
+| 摔倒判定放宽 | 允许更大倾斜角（~60°） |
+| 关闭推力扰动 | 台阶上不施加外力 |
+
+```bash
+python -m playground.dog.runner \
+    --env stair_climb \
+    --task stairs \
+    --output_dir checkpoints/dog_stairs \
+    --restore_checkpoint_path checkpoints/dog_joystick/你的平地checkpoint \
+    --num_envs 2048 \
+    --num_timesteps 150000000
+```
+
+### 3.5 Stairs Mixed 混合台阶地形训练
+
+混合台阶地形包含四种地形区域：缓坡台阶、陡峭台阶、随机高度平台、连续斜坡。适合训练机器狗在各种台阶场景下的泛化能力。
+
+```bash
+python -m playground.dog.runner \
+    --env joystick \
+    --task stairs_mixed \
+    --output_dir checkpoints/dog_stairs_mixed \
+    --num_envs 2048 \
+    --num_timesteps 50000000
+```
+
+> 推荐训练路径：`flat_terrain` → `rough_terrain` → `stairs` → `stairs_mixed`，逐步增加难度，每阶段用 `--restore_checkpoint_path` 从上一阶段继续。
+
+### 3.6 从 Checkpoint 恢复训练
 
 ```bash
 python -m playground.dog.runner \
@@ -134,7 +197,17 @@ python -m playground.dog.runner \
     --restore_checkpoint_path checkpoints/dog_joystick/2026_04_01_120000_50000000
 ```
 
-### 3.4 监控训练（TensorBoard）
+也可以从平坦地形的 checkpoint 切换到粗糙地形继续训练：
+
+```bash
+python -m playground.dog.runner \
+    --env joystick \
+    --task rough_terrain \
+    --output_dir checkpoints/dog_rough \
+    --restore_checkpoint_path checkpoints/dog_joystick/2026_04_01_120000_50000000
+```
+
+### 3.7 监控训练（TensorBoard）
 
 ```bash
 tensorboard --logdir checkpoints/dog_joystick
@@ -276,14 +349,25 @@ noise_config=config_dict.create(
 - `damping`: 关节阻尼
 - `frictionloss`: 静摩擦力矩
 
-### 6.5 添加粗糙地形
+### 6.5 地形说明
 
-1. 在 `xmls/` 下创建 `scene_rough_terrain.xml`（参考 open_duck_mini_v2 的同名文件）
-2. 在 `constants.py` 中添加路径和映射：
-   ```python
-   ROUGH_TERRAIN_XML = ROOT_PATH / "xmls" / "scene_rough_terrain.xml"
-   ```
-3. 更新 `task_to_xml()` 函数
+项目已内置四种地形：
+
+| 地形 | task 名 | 说明 |
+|------|---------|------|
+| **平坦地面** | `flat_terrain` | 纯平面，摩擦系数 0.6 |
+| **粗糙地形** | `rough_terrain` | 随机起伏高度场，高度 0~15cm，摩擦 0.8 |
+| **台阶地形** | `stairs` | 四面金字塔台阶，21级/面，台阶高 5cm，宽 13cm，顶部生成 |
+| **混合台阶** | `stairs_mixed` | 四区域：缓坡台阶、陡峭台阶、随机平台、连续斜坡 |
+
+如需自定义地形，可替换 `xmls/assets/` 中的高度场 PNG 图（256x256 灰度图，亮度越高地面越高），并在对应的 `scene_*.xml` 中调整 `hfield` 的 `size` 参数：
+
+```xml
+<!-- size="半长x 半长y 最大高度 最小高度" -->
+<hfield name="hfield" file="assets/stairs_hfield.png" size="5 5 0.05 0.001"/>
+```
+
+> 使用高度场地形（rough/stairs/stairs_mixed）训练时如果显存不足（OOM），需要加 `--num_envs 2048` 降低并行环境数量。
 
 ## 7. Sim2Real 迁移注意事项
 
@@ -318,3 +402,16 @@ noise_config=config_dict.create(
 
 - 确认安装了 `tensorflow`, `tf2onnx`, `onnxruntime`
 - 检查 `playground/common/export_onnx.py` 的网络层配置
+
+### Q: GPU 显存不足 (OOM)？
+
+- 添加 `--num_envs 2048`（默认 8192），减少并行环境数量
+- 高度场地形（rough/stairs）比平坦地形占更多显存
+- 如果 2048 仍 OOM，继续降到 `1024`
+
+### Q: 推理时报 Offscreen framebuffer 错误？
+
+- 在命令前加 `MUJOCO_GL=egl`：
+  ```bash
+  MUJOCO_GL=egl python -m playground.dog.mujoco_infer -o your_model.onnx
+  ```
